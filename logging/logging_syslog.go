@@ -49,7 +49,8 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 
 	formatted, _ := l.LogrusLogger.WithFields(eventFields).String()
 
-	fmt.Fprintf(os.Stdout, "ShipEvents %s %s - %s", aMessage, eventFields["event_type"], formatted)
+	//fmt.Fprintf(os.Stdout, "ShipEvents %s %s - %s", aMessage, eventFields["event_type"], formatted)
+	//TODO debug log of some kind?
 
 	packet := syslog.Packet{
 		Severity: syslog.SevInfo,
