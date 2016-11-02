@@ -1,0 +1,10 @@
+# Example file
+# Comments starts with #
+# Syntax:
+# regexp(use ^, $ or .*) TAB structuredData(as in rfc5424)
+# The structuredData is optional
+# Any non matching will be ignored
+# Any message witout cf_app_name will be ignored as well when this filter is present
+#
+^France-org/development/.*	[rtlog@123 basicat="foo"]
+^France-org/docker/lattice$	[rtlog@123 basicat="lattice"]

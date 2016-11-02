@@ -2,11 +2,12 @@ package logging
 
 import (
 	"fmt"
-	"github.com/Sirupsen/logrus"
-	logrus_syslog "github.com/Sirupsen/logrus/hooks/syslog"
 	"io/ioutil"
 	"log/syslog"
 	"os"
+
+	"github.com/Sirupsen/logrus"
+	logrus_syslog "github.com/Sirupsen/logrus/hooks/syslog"
 )
 
 type LoggingLogrus struct {

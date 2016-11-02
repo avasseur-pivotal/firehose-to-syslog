@@ -2,17 +2,19 @@ package eventRouting
 
 import (
 	"fmt"
-	"github.com/Sirupsen/logrus"
-	"github.com/cloudfoundry-community/firehose-to-syslog/caching"
-	fevents "github.com/cloudfoundry-community/firehose-to-syslog/events"
-	"github.com/cloudfoundry-community/firehose-to-syslog/extrafields"
-	"github.com/cloudfoundry-community/firehose-to-syslog/logging"
-	"github.com/cloudfoundry/sonde-go/events"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Sirupsen/logrus"
+	"github.com/cloudfoundry-community/firehose-to-syslog/caching"
+	fevents "github.com/cloudfoundry-community/firehose-to-syslog/events"
+	"github.com/cloudfoundry-community/firehose-to-syslog/extrafields"
+	"github.com/cloudfoundry-community/firehose-to-syslog/logging"
+	"github.com/cloudfoundry-community/firehose-to-syslog/rfc5424"
+	"github.com/cloudfoundry/sonde-go/events"
 )
 
 type EventRouting struct {
@@ -22,6 +24,7 @@ type EventRouting struct {
 	mutex               *sync.Mutex
 	log                 logging.Logging
 	ExtraFields         map[string]string
+	filterRFC5424       *[]rfc5424.AppFilterStructuredData
 }
 
 func NewEventRouting(caching caching.Caching, logging logging.Logging) *EventRouting {
@@ -67,18 +70,34 @@ func (e *EventRouting) RouteEvent(msg *events.Envelope) {
 		event.AnnotateWithEnveloppeData(msg)
 
 		event.AnnotateWithMetaData(e.ExtraFields)
+
+		// default accept unless filter in place
+		accept := (e.filterRFC5424 == nil)
 		if _, hasAppId := event.Fields["cf_app_id"]; hasAppId {
 			event.AnnotateWithAppData(e.CachingClient)
+			// filter is in place and a real app name was found (else it is just RTR CC api)
+			if e.filterRFC5424 != nil && event.Fields["cf_app_name"] != nil {
+				orgspaceapp := strings.Join([]string{event.Fields["cf_org_name"].(string), event.Fields["cf_space_name"].(string), event.Fields["cf_app_name"].(string)}, "/")
+				for _, filter := range *e.filterRFC5424 {
+					if filter.Matcher.MatchString(orgspaceapp) {
+						accept = true
+						event.Fields["rfc5424_structureddata"] = filter.StructuredData
+						break
+					}
+				}
+			}
 		}
 
-		e.mutex.Lock()
-		e.log.ShipEvents(event.Fields, event.Msg)
-		e.selectedEventsCount[eventType.String()]++
-		e.mutex.Unlock()
+		if accept {
+			e.mutex.Lock()
+			e.log.ShipEvents(event.Fields, event.Msg)
+			e.selectedEventsCount[eventType.String()]++
+			e.mutex.Unlock()
+		}
 	}
 }
 
-func (e *EventRouting) SetupEventRouting(wantedEvents string) error {
+func (e *EventRouting) SetupEventRouting(wantedEvents string, filterRFC5424path string) error {
 	e.selectedEvents = make(map[string]bool)
 	if wantedEvents == "" {
 		e.selectedEvents["LogMessage"] = true
@@ -91,6 +110,17 @@ func (e *EventRouting) SetupEventRouting(wantedEvents string) error {
 				return fmt.Errorf("Rejected Event Name [%s] - Valid events: %s", event, GetListAuthorizedEventEvents())
 			}
 		}
+	}
+
+	//RFC5424 filter if required
+	if filterRFC5424path != "" {
+		f, err := rfc5424.LoadFilter(filterRFC5424path)
+		if err != nil {
+			logging.LogError(fmt.Sprintf("Could not read filter file %s", filterRFC5424path), err)
+			return err
+		}
+		logging.LogStd(fmt.Sprintf("Setup %d filters RFC5424 structured data", len(*f)), true)
+		e.filterRFC5424 = f
 	}
 	return nil
 }

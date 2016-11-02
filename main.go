@@ -34,6 +34,7 @@ var (
 	modeProf           = kingpin.Flag("mode-prof", "Enable profiling mode, one of [cpu, mem, block]").Default("").OverrideDefaultFromEnvar("MODE_PROF").String()
 	pathProf           = kingpin.Flag("path-prof", "Set the Path to write profiling file").Default("").OverrideDefaultFromEnvar("PATH_PROF").String()
 	logFormatterType   = kingpin.Flag("log-formatter-type", "Log formatter type to use. Valid options are text, json. If none provided, defaults to json.").Envar("LOG_FORMATTER_TYPE").String()
+	filterRFC5424path  = kingpin.Flag("filter-path", "Filter file path for (org/space/app regexp RFC5424 structured data)").Default("").OverrideDefaultFromEnvar("PATH_FILTER_RFC5424").String()
 )
 
 var (
@@ -45,7 +46,7 @@ func main() {
 	kingpin.Parse()
 
 	//Setup Logging
-	loggingClient := logging.NewLogging(*syslogServer, *syslogProtocol, *logFormatterType, *debug)
+	loggingClient := logging.NewLoggingSyslog(*syslogServer, *syslogProtocol, *logFormatterType, *debug)
 	logging.LogStd(fmt.Sprintf("Starting firehose-to-syslog %s ", version), true)
 
 	if *modeProf != "" {
@@ -83,7 +84,7 @@ func main() {
 	}
 	//Creating Events
 	events := eventRouting.NewEventRouting(cachingClient, loggingClient)
-	err := events.SetupEventRouting(*wantedEvents)
+	err := events.SetupEventRouting(*wantedEvents, *filterRFC5424path)
 	if err != nil {
 		log.Fatal("Error setting up event routing: ", err)
 		os.Exit(1)
@@ -116,9 +117,8 @@ func main() {
 		FirehoseSubscriptionID: *subscriptionId,
 	}
 
-	if loggingClient.Connect() || *debug {
-
-		logging.LogStd("Connected to Fluentd Server! Connecting to Firehose...", true)
+	if loggingClient.Connect() {
+		logging.LogStd("Connected to syslog endpoint. Now connecting to Firehose...", true)
 		firehoseClient := firehoseclient.NewFirehoseNozzle(cfClient, events, firehoseConfig)
 		err = firehoseClient.Start()
 		if err != nil {
@@ -129,7 +129,7 @@ func main() {
 		}
 
 	} else {
-		logging.LogError("Failed connecting to the Fluentd Server...Please check settings and try again!", "")
+		logging.LogError("Failed connecting to the syslog endpoint...Please check settings and try again!", "")
 	}
 
 	defer cachingClient.Close()
