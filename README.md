@@ -1,3 +1,22 @@
+# This is a fork
+
+This is a fork from https://github.com/cloudfoundry-community/firehose-to-syslog
+
+Added & changed:
+- not using Logrus syslog but using a custom implementation derived from https://github.com/papertrail/remote_syslog2/tree/master/syslog
+- this is to implement optional RFC5424 structured data field in addition to the message field
+- adding --filter-path=...file.txt that contains the "regexp TAB structureddata" with regexp matching against orgName/spaceName/appName
+
+If --filter-path is used then:
+- logs that do not have appName (found from app id and cache) are discarded
+- orgName/spaceName/appName is matched to the regexp in order till a match - else discarded
+- if matched, and if regexp is associated with a structureddata, the structureddata is added to the syslog message in RFC5424 format
+
+
+
+
+
+
 #Disclaimer
 
 This is V2 if you encounter any trouble with this version please use the 1.X.X
