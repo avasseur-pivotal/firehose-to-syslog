@@ -2,7 +2,6 @@ package logging
 
 import "time"
 import "fmt"
-import "os"
 import "github.com/cloudfoundry-community/firehose-to-syslog/syslog"
 import "github.com/Sirupsen/logrus"
 
