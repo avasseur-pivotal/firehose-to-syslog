@@ -3,8 +3,11 @@
 # Syntax:
 # regexp(use ^, $ or .*) TAB structuredData(as in rfc5424)
 # The structuredData is optional
+#
 # Any non matching will be ignored
 # Any message witout cf_app_name will be ignored as well when this filter is present
+#   unless there is a .* match
 #
-^France-org/development/.*	[rtlog@123 basicat="foo"]
-^France-org/docker/lattice$	[rtlog@123 basicat="lattice"]
+^France-org/development/.*
+^France-org/docker/lattice$	[xx@123 code="lattice"]
+.*	[meta sequenceid=""][xx@123 code="1CF"]

@@ -21,11 +21,13 @@ type AppFilterStructuredData struct {
 // example:
 // org.*prod/^space$/.*		[stuff@id foo="bar"]
 // will ignore lines starting with #
-func LoadFilter(path string) (*[]AppFilterStructuredData, error) {
+func LoadFilter(path string) (*[]AppFilterStructuredData, string, error) {
 	var filter []AppFilterStructuredData
+	var defaultsd string
+
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
 	defer f.Close()
@@ -39,7 +41,7 @@ func LoadFilter(path string) (*[]AppFilterStructuredData, error) {
 			rx, err := regexp.Compile(cols[0])
 			if err != nil {
 				logging.LogError("Cannot compile regexp", err)
-				return nil, err
+				return nil, "", err
 			}
 
 			sd := ""
@@ -51,8 +53,13 @@ func LoadFilter(path string) (*[]AppFilterStructuredData, error) {
 				Matcher:        rx,
 				StructuredData: sd,
 			})
+
+			// special case for ".*" with structured data
+			if cols[0] == ".*" && sd != "" {
+				defaultsd = sd
+			}
 		}
 	}
-	return &filter, nil
+	return &filter, defaultsd, nil
 
 }

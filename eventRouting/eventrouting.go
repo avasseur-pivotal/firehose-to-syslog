@@ -18,13 +18,14 @@ import (
 )
 
 type EventRouting struct {
-	CachingClient       caching.Caching
-	selectedEvents      map[string]bool
-	selectedEventsCount map[string]uint64
-	mutex               *sync.Mutex
-	log                 logging.Logging
-	ExtraFields         map[string]string
-	filterRFC5424       *[]rfc5424.AppFilterStructuredData
+	CachingClient          caching.Caching
+	selectedEvents         map[string]bool
+	selectedEventsCount    map[string]uint64
+	mutex                  *sync.Mutex
+	log                    logging.Logging
+	ExtraFields            map[string]string
+	filterRFC5424          *[]rfc5424.AppFilterStructuredData
+	filterRFC5424defaultsd string
 }
 
 func NewEventRouting(caching caching.Caching, logging logging.Logging) *EventRouting {
@@ -87,6 +88,11 @@ func (e *EventRouting) RouteEvent(msg *events.Envelope) {
 				}
 			}
 		}
+		// special case of default structured data and filter in place
+		if (!accept) && e.filterRFC5424defaultsd != "" {
+			accept = true
+			event.Fields["rfc5424_structureddata"] = e.filterRFC5424defaultsd
+		}
 
 		if accept {
 			e.mutex.Lock()
@@ -114,13 +120,17 @@ func (e *EventRouting) SetupEventRouting(wantedEvents string, filterRFC5424path 
 
 	//RFC5424 filter if required
 	if filterRFC5424path != "" {
-		f, err := rfc5424.LoadFilter(filterRFC5424path)
+		f, defaultsd, err := rfc5424.LoadFilter(filterRFC5424path)
 		if err != nil {
 			logging.LogError(fmt.Sprintf("Could not read filter file %s", filterRFC5424path), err)
 			return err
 		}
 		logging.LogStd(fmt.Sprintf("Setup %d filters RFC5424 structured data", len(*f)), true)
+		if defaultsd != "" {
+			logging.LogStd(fmt.Sprintf("Setup default RFC5424 structured data %s", defaultsd), true)
+		}
 		e.filterRFC5424 = f
+		e.filterRFC5424defaultsd = defaultsd
 	}
 	return nil
 }
@@ -178,7 +188,7 @@ func (e *EventRouting) LogEventTotals(logTotalsTime time.Duration) {
 			startTime = time.Now()
 			event, lastCount := e.getEventTotals(totalElapsedTime, elapsedTime, count)
 			count = lastCount
-			e.log.ShipEvents(event.Fields, event.Msg)
+			e.log.ShipEvents(event.Fields, event.Msg) //TODO ALEX no sd here - as we don't go in event routing - move to syslog?
 		}
 	}()
 }

@@ -42,9 +42,12 @@ func (l *LoggingSyslog) Connect() bool {
 }
 
 func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage string) {
-	// remove structured metadata prefixed fields in the message
-	sd := eventFields["rfc5424_structureddata"].(string)
-	delete(eventFields, "rfc5424_structureddata")
+	// remove structured metadata prefixed fields in the message if it was added
+	var sds string
+	if eventFields["rfc5424_structureddata"] != nil {
+		sds = eventFields["rfc5424_structureddata"].(string)
+		delete(eventFields, "rfc5424_structureddata")
+	}
 
 	formatted, _ := l.LogrusLogger.WithFields(eventFields).String()
 
@@ -53,15 +56,16 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 
 	packet := syslog.Packet{
 		Severity: syslog.SevInfo,
-		Facility: syslog.LogUser,
+		Facility: syslog.LogLocal5,
 		Hostname: "dopplerhostname", //TODO could get local machine name
-		Tag:      "dopllertag",      //TODO could get proc id - doppler[pid]
+		Tag:      "pcflog",          //TODO could get proc id - doppler[pid]
 		//TODO on UDP it will be truncated to 1K
 		//Time: eventFields["timestamp"],
 		Time:           time.Now(),
-		StructuredData: sd,        //[meta sequenceid=\"\"][rtlog@1368 basicat=\"alexTODO\" produit=\"pivotal\"]", //TODO only by org/space/app regexp
+		StructuredData: sds,       //[xxx yy="zz" uu="tt"][other@123 code="abc"]
 		Message:        formatted, //TODO is it ok - or? aMessage,
 	}
+
 	l.Logger.Write(packet)
 
 }

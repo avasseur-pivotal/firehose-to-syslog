@@ -8,9 +8,11 @@ Added & changed:
 - adding --filter-path=...file.txt that contains the "regexp TAB structureddata" with regexp matching against orgName/spaceName/appName
 
 If --filter-path is used then:
+unless there is a wildcard .* :
 - logs that do not have appName (found from app id and cache) are discarded
 - orgName/spaceName/appName is matched to the regexp in order till a match - else discarded
 - if matched, and if regexp is associated with a structureddata, the structureddata is added to the syslog message in RFC5424 format
+If there is a wildcard .* then all logs including those without app id are accepted and enriched with the provided ".* TAB structureddata" from the filter file
 
 
 
