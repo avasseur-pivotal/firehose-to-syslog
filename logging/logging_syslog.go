@@ -49,9 +49,11 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 		delete(eventFields, "rfc5424_structureddata")
 	}
 
-	formatted, _ := l.LogrusLogger.WithFields(eventFields).String()
+	entry := l.LogrusLogger.WithFields(eventFields)
+	entry.Message = aMessage
+	formatted, _ := entry.String()
 
-	//fmt.Fprintf(os.Stdout, "ShipEvents %s %s - %s", aMessage, eventFields["event_type"], formatted)
+	//fmt.Fprintf(os.Stdout, "ShipEvents [%s] %s -| %s", aMessage, eventFields["event_type"], formatted)
 	//TODO debug log of some kind?
 
 	packet := syslog.Packet{
@@ -63,7 +65,7 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 		//Time: eventFields["timestamp"],
 		Time:           time.Now(),
 		StructuredData: sds,       //[xxx yy="zz" uu="tt"][other@123 code="abc"]
-		Message:        formatted, //TODO is it ok - or? aMessage,
+		Message:        formatted, //For LogMessage, the stdout/stderr will be in "msg:" which comes from Logrus entry.Message
 	}
 
 	l.Logger.Write(packet)

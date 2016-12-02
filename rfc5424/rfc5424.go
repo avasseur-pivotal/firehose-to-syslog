@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/avasseur-pivotal/firehose-to-syslog/logging"
+	"github.com/cloudfoundry-community/firehose-to-syslog/logging"
 )
 
 type AppFilterStructuredData struct {
