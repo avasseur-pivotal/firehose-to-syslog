@@ -5,7 +5,9 @@ This is a fork from https://github.com/cloudfoundry-community/firehose-to-syslog
 Added & changed:
 - not using Logrus syslog but using a custom implementation derived from https://github.com/papertrail/remote_syslog2/tree/master/syslog
 - this is to implement optional RFC5424 structured data field in addition to the message field
-- adding --filter-path=...file.txt that contains the "regexp TAB structureddata" with regexp matching against orgName/spaceName/appName
+- adding --filter-path=...file.txt that contains a yml configuration file for the regexp matching against orgName/spaceName/appName and the structureddata to add
+- optional skipping syslog 
+- optional intercept LogMessage to a rolling logfile, one file per org, intercepting prefix (and removing it before logging)
 
 If --filter-path is used then:
 unless there is a wildcard .* :
@@ -15,6 +17,57 @@ unless there is a wildcard .* :
 If there is a wildcard .* then all logs including those without app id are accepted and enriched with the provided ".* TAB structureddata" from the filter file
 
 
+# Example command
+You can test using PCFdev and using `cf push -o cloudfoundry/lattice-app lattice`
+
+```
+./firehose-to-syslog \
+--api-endpoint https://api.local.pcfdev.io --skip-ssl-validation --user=admin --password=admin \
+--syslog-server=localhost:5001 \
+-subscription-id="exlog" \
+--events=LogMessage --filter-path=rfc5424/rfc5424.yml \
+--debug
+```
+
+
+
+# Example yml
+See rfc5424/ folder
+```
+# Yml formatted file
+#
+# "rfc5424" defines a set of Org/Space/AppName regexp to capture
+# - if "meta" is present, it will be added as RFC5424 structured data
+# - if a rule has "intercept" present (and if there is an "intercept"
+#   configuration) then the LogMessage who are prefixed with it will be
+#   captured and written to the configured intercept filename
+# - the optional "skip-syslog" can be used to only have intercept to log
+#   and no syslog out.
+#
+# "intercept" defines the configuration of log files for the intercepted
+# LogMessage. The "filename" %s is substituted with the Org id
+#
+---
+rfc5424:
+  - rule: demo1
+    space: "^France-org/development/.*"
+  - rule: demo2
+    space: "^France-org/docker/lattice$"
+    meta: '[xx@123 code="lattice"]'
+    intercept: "Lattice-"
+  - rule: catchAll
+    space: .*
+#    meta: '[meta sequenceid=""][xx@123 code="1CF"]'
+    skip-syslog: false
+#
+# filename must have a %s that will be replaced by the org id
+#
+intercept:
+  filename: /tmp/firehose-%s.log
+  sizeMB: 1
+  backup: 2
+  maxDays: 1
+```
 
 
 

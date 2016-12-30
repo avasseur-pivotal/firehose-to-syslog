@@ -1,0 +1,34 @@
+# Yml formatted file
+#
+# "rfc5424" defines a set of Org/Space/AppName regexp to capture
+# - if "meta" is present, it will be added as RFC5424 structured data
+# - if a rule has "intercept" present (and if there is an "intercept"
+#   configuration) then the LogMessage who are prefixed with it will be
+#   captured and written to the configured intercept filename
+# - the optional "skip-syslog" can be used to only have intercept to log
+#   and no syslog out.
+#
+# "intercept" defines the configuration of log files for the intercepted
+# LogMessage. The "filename" %s is substituted with the Org id
+#
+---
+rfc5424:
+  - rule: demo1
+    space: "^France-org/development/.*"
+  - rule: demo2
+    space: "^France-org/docker/lattice$"
+    meta: '[xx@123 code="lattice"]'
+    intercept: "Lattice-"
+  - rule: catchAll
+    space: .*
+#    meta: '[meta sequenceid=""][xx@123 code="1CF"]'
+    skip-syslog: false
+#
+# filename must have a %s that will be replaced by the org id
+#
+intercept:
+  filename: /tmp/firehose-%s.log
+  sizeMB: 1
+  backup: 2
+  maxDays: 1
+

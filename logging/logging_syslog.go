@@ -1,26 +1,76 @@
 package logging
 
 import "time"
+import "os"
+import "bufio"
+import "io/ioutil"
+
 import "fmt"
+import "sync"
+import "strings"
 import "github.com/cloudfoundry-community/firehose-to-syslog/syslog"
 import "github.com/Sirupsen/logrus"
+import "gopkg.in/natefinch/lumberjack.v2"
+import "gopkg.in/yaml.v2"
 
-type LoggingSyslog struct {
-	Logger           *syslog.Logger
-	LogrusLogger     *logrus.Logger
-	syslogServer     string
-	debugFlag        bool
-	logFormatterType string
-	syslogProtocol   string
+type InterceptConfig struct {
+	Intercept InterceptConfigItem `yaml:"intercept"`
 }
 
-func NewLoggingSyslog(SyslogServerFlag string, SysLogProtocolFlag string, LogFormatterFlag string, DebugFlag bool) Logging {
+type InterceptConfigItem struct {
+	FileName string `yaml:"filename"`
+	SizeMB   int    `yaml:"sizeMB"`
+	Backup   int    `yaml:"backup"`
+	MaxDays  int    `yaml:"maxDays"`
+}
+
+func LoadInterceptYaml(path string) (*InterceptConfigItem, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+
+	defer f.Close()
+	reader := bufio.NewReader(f)
+	contents, _ := ioutil.ReadAll(reader)
+
+	config := InterceptConfig{}
+	err = yaml.Unmarshal(contents, &config)
+	if err != nil {
+		return nil, err
+	}
+	return &config.Intercept, nil
+}
+
+type LoggingSyslog struct {
+	Logger                            *syslog.Logger
+	LogrusLogger                      *logrus.Logger
+	syslogServer                      string
+	debugFlag                         bool
+	logFormatterType                  string
+	syslogProtocol                    string
+	capturedLogMessageOrgLoggers      map[interface{}]lumberjack.Logger
+	capturedLogMessageOrgLoggersMutex sync.RWMutex
+	intercept                         *InterceptConfigItem
+}
+
+func NewLoggingSyslog(SyslogServerFlag string, SysLogProtocolFlag string, LogFormatterFlag string, DebugFlag bool, InterceptConfigPath string) Logging {
+	var config *InterceptConfigItem
+	//Parse filter intercept config if needed
+	if InterceptConfigPath != "" {
+		config, _ = LoadInterceptYaml(InterceptConfigPath)
+	} else {
+		config = nil
+	}
+
 	return &LoggingSyslog{
-		LogrusLogger:     logrus.New(),
-		syslogServer:     SyslogServerFlag,
-		logFormatterType: LogFormatterFlag,
-		syslogProtocol:   SysLogProtocolFlag,
-		debugFlag:        DebugFlag,
+		LogrusLogger:                 logrus.New(),
+		syslogServer:                 SyslogServerFlag,
+		logFormatterType:             LogFormatterFlag,
+		syslogProtocol:               SysLogProtocolFlag,
+		debugFlag:                    DebugFlag,
+		capturedLogMessageOrgLoggers: make(map[interface{}]lumberjack.Logger),
+		intercept:                    config,
 	}
 
 }
@@ -48,6 +98,16 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 		sds = eventFields["rfc5424_structureddata"].(string)
 		delete(eventFields, "rfc5424_structureddata")
 	}
+	var prefix string
+	if eventFields["intercept_prefix"] != nil {
+		prefix = eventFields["intercept_prefix"].(string)
+		delete(eventFields, "intercept_prefix")
+	}
+	var skipSyslog bool
+	if eventFields["intercept_skipsyslog"] != nil {
+		skipSyslog = eventFields["intercept_skipsyslog"].(bool)
+		delete(eventFields, "intercept_skipsyslog")
+	}
 
 	entry := l.LogrusLogger.WithFields(eventFields)
 	entry.Message = aMessage
@@ -65,9 +125,49 @@ func (l *LoggingSyslog) ShipEvents(eventFields map[string]interface{}, aMessage 
 		//Time: eventFields["timestamp"],
 		Time:           time.Now(),
 		StructuredData: sds,       //[xxx yy="zz" uu="tt"][other@123 code="abc"]
-		Message:        formatted, //For LogMessage, the stdout/stderr will be in "msg:" which comes from Logrus entry.Message
+		Message:        formatted, //For LogMessage, the stdout/stderr will be in "msg:" which comes from Logrus entry.Message = aMessage
 	}
 
-	l.Logger.Write(packet)
+	if !skipSyslog {
+		l.Logger.Write(packet)
+	}
+
+	if l.intercept != nil && prefix != "" {
+		if eventFields["cf_app_id"] != "" && eventFields["cf_org_id"] != "" {
+			if strings.HasPrefix(aMessage, prefix) {
+				l.capturedLogMessageOrgLoggersMutex.RLock()
+				lb, exists := l.capturedLogMessageOrgLoggers[eventFields["cf_org_id"]]
+				if !exists {
+					LogStd(fmt.Sprintf("new Logger for Org %s %s\n", eventFields["cf_org_name"], eventFields["cf_org_id"]), l.debugFlag)
+					l.capturedLogMessageOrgLoggersMutex.RUnlock()
+					l.capturedLogMessageOrgLoggersMutex.Lock()
+					lb = lumberjack.Logger{
+						Filename:   fmt.Sprintf(l.intercept.FileName, eventFields["cf_org_id"]),
+						MaxSize:    l.intercept.SizeMB,  // megabytes
+						MaxBackups: l.intercept.Backup,  // keep 2 archive + current - firehose-2016-12-05T09-48-47.802.log
+						MaxAge:     l.intercept.MaxDays, //days
+					}
+					l.capturedLogMessageOrgLoggers[eventFields["cf_org_id"]] = lb
+					l.capturedLogMessageOrgLoggersMutex.Unlock()
+				} else {
+					//fmt.Fprintf(os.Stdout, "cur Logger %s %s\n", eventFields["cf_org_id"], l.capturedLogMessageOrgLoggers[eventFields["cf_org_id"]])
+					l.capturedLogMessageOrgLoggersMutex.RUnlock()
+				}
+
+				//TODO we would need to remove the prefix ?
+				lb.Write([]byte(strings.TrimPrefix(aMessage, prefix)))
+				lb.Write([]byte("\n"))
+			}
+		}
+	}
+
+	/*
+		lb := &lumberjack.Logger{
+			Filename:   "/tmp/firehose.log",
+			MaxSize:    1, // megabytes
+			MaxBackups: 2, // keep 2 archive + current - firehose-2016-12-05T09-48-47.802.log
+			MaxAge:     1, //days
+		}
+	*/
 
 }

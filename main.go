@@ -34,7 +34,7 @@ var (
 	modeProf           = kingpin.Flag("mode-prof", "Enable profiling mode, one of [cpu, mem, block]").Default("").OverrideDefaultFromEnvar("MODE_PROF").String()
 	pathProf           = kingpin.Flag("path-prof", "Set the Path to write profiling file").Default("").OverrideDefaultFromEnvar("PATH_PROF").String()
 	logFormatterType   = kingpin.Flag("log-formatter-type", "Log formatter type to use. Valid options are text, json. If none provided, defaults to json.").Envar("LOG_FORMATTER_TYPE").String()
-	filterRFC5424path  = kingpin.Flag("filter-path", "Filter file path for (org/space/app regexp RFC5424 structured data)").Default("").OverrideDefaultFromEnvar("PATH_FILTER_RFC5424").String()
+	filterRFC5424Path  = kingpin.Flag("filter-path", "Filter file path for (org/space/app regexp RFC5424 structured data)").Default("").OverrideDefaultFromEnvar("PATH_FILTER_RFC5424").String()
 )
 
 var (
@@ -45,8 +45,8 @@ func main() {
 	kingpin.Version(version)
 	kingpin.Parse()
 
-	//Setup Logging
-	loggingClient := logging.NewLoggingSyslog(*syslogServer, *syslogProtocol, *logFormatterType, *debug)
+	//Setup syslog endpoint
+	loggingClient := logging.NewLoggingSyslog(*syslogServer, *syslogProtocol, *logFormatterType, *debug, *filterRFC5424Path)
 	logging.LogStd(fmt.Sprintf("Starting firehose-to-syslog %s ", version), true)
 
 	if *modeProf != "" {
@@ -68,7 +68,11 @@ func main() {
 		Password:          *password,
 		SkipSslValidation: *skipSSLValidation,
 	}
-	cfClient, _ := cfclient.NewClient(&c)
+	cfClient, err := cfclient.NewClient(&c)
+	if err != nil {
+		log.Fatal("Error setting up CF client: ", err)
+		os.Exit(1)
+	}
 
 	if len(*dopplerEndpoint) > 0 {
 		cfClient.Endpoint.DopplerEndpoint = *dopplerEndpoint
@@ -84,7 +88,7 @@ func main() {
 	}
 	//Creating Events
 	events := eventRouting.NewEventRouting(cachingClient, loggingClient)
-	err := events.SetupEventRouting(*wantedEvents, *filterRFC5424path)
+	err = events.SetupEventRouting(*wantedEvents, *filterRFC5424Path)
 	if err != nil {
 		log.Fatal("Error setting up event routing: ", err)
 		os.Exit(1)

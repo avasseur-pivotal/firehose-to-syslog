@@ -5,22 +5,81 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
-	"strings"
+
+	"gopkg.in/yaml.v2"
 
 	"github.com/cloudfoundry-community/firehose-to-syslog/logging"
 )
 
-type AppFilterStructuredData struct {
-	match          string
-	Matcher        *regexp.Regexp
-	StructuredData string
+type Rfc5424Config struct {
+	Items []Rfc5424ConfigItem `yaml:"rfc5424"`
 }
 
+type Rfc5424ConfigItem struct {
+	Rule       string `yaml:"rule"`
+	Space      string `yaml:"space"`
+	Meta       string `yaml:"meta"`        // RFC5424 structured data to add
+	SkipSyslog bool   `yaml:"skip-syslog"` // defaults to false
+	Intercept  string `yaml:"intercept"`
+}
+
+type AppFilterStructuredData struct {
+	Config  Rfc5424ConfigItem
+	Matcher *regexp.Regexp
+}
+
+func LoadFilterYaml(path string) (*[]AppFilterStructuredData, string, error) {
+	var filter []AppFilterStructuredData
+	var defaultsd string
+
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, "", err
+	}
+
+	defer f.Close()
+	reader := bufio.NewReader(f)
+	contents, _ := ioutil.ReadAll(reader)
+
+	config := Rfc5424Config{}
+	err = yaml.Unmarshal(contents, &config)
+	if err != nil {
+		return nil, "", err
+	}
+
+	for _, item := range config.Items {
+		logging.LogStd("Loading rule "+item.Rule, true)
+
+		rx, err := regexp.Compile(item.Space)
+		if err != nil {
+			logging.LogError("Cannot compile regexp", err)
+			return nil, "", err
+		}
+		sd := ""
+		if item.Meta != "" {
+			sd = item.Meta
+		}
+		filter = append(filter, AppFilterStructuredData{
+			Config:  item,
+			Matcher: rx,
+		})
+
+		// special case for ".*" with structured data
+		if item.Space == ".*" && sd != "" {
+			defaultsd = sd
+		}
+	}
+	return &filter, defaultsd, nil
+
+}
+
+// DEPRECATED
 // loads from file at path
 // regexp TAB structureddata
 // example:
 // org.*prod/^space$/.*		[stuff@id foo="bar"]
 // will ignore lines starting with #
+/*
 func LoadFilter(path string) (*[]AppFilterStructuredData, string, error) {
 	var filter []AppFilterStructuredData
 	var defaultsd string
@@ -61,5 +120,5 @@ func LoadFilter(path string) (*[]AppFilterStructuredData, string, error) {
 		}
 	}
 	return &filter, defaultsd, nil
-
 }
+*/

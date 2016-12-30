@@ -82,7 +82,9 @@ func (e *EventRouting) RouteEvent(msg *events.Envelope) {
 				for _, filter := range *e.filterRFC5424 {
 					if filter.Matcher.MatchString(orgspaceapp) {
 						accept = true
-						event.Fields["rfc5424_structureddata"] = filter.StructuredData
+						event.Fields["rfc5424_structureddata"] = filter.Config.Meta
+						event.Fields["intercept_prefix"] = filter.Config.Intercept
+						event.Fields["intercept_skipsyslog"] = filter.Config.SkipSyslog
 						break
 					}
 				}
@@ -120,7 +122,7 @@ func (e *EventRouting) SetupEventRouting(wantedEvents string, filterRFC5424path 
 
 	//RFC5424 filter if required
 	if filterRFC5424path != "" {
-		f, defaultsd, err := rfc5424.LoadFilter(filterRFC5424path)
+		f, defaultsd, err := rfc5424.LoadFilterYaml(filterRFC5424path)
 		if err != nil {
 			logging.LogError(fmt.Sprintf("Could not read filter file %s", filterRFC5424path), err)
 			return err
